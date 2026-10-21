@@ -1,0 +1,49 @@
+# Single-GPU fallback: TRL GRPOTrainer + Unsloth LoRA (TRL 1.16, Unsloth 2026.10 at time of writing).
+#
+# Status: stub. TRL's GRPOTrainer samples single completions per prompt; a tau2
+# episode is a multi-turn conversation with a simulated user and tool calls, so
+# this path needs a custom rollout (TRL's `rollout_func` / environment hook, or
+# Unsloth's agentic GRPO notebooks) that runs tooluse_rl.env.run_episode and
+# returns the reward from tooluse_rl.env.reward.compute_reward. Keep prime-rl
+# as the primary path; use this when only one 24-80GB GPU is available.
+#
+# Field names below are TRL `GRPOConfig` / peft `LoraConfig` fields.
+
+model:
+  name: Qwen/Qwen3-8B                 # or unsloth/Qwen3-8B for Unsloth's patched weights
+  load_in_4bit: true                  # Unsloth: 8B fits a 24GB card in 4-bit with LoRA
+  max_seq_length: 16384               # whole episode incl. tool outputs
+
+lora:                                 # peft.LoraConfig
+  r: 32
+  lora_alpha: 64
+  lora_dropout: 0.0
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+grpo:                                 # trl.GRPOConfig
+  num_generations: 8                  # = group size; 8 is the floor for a binary reward, 16 if memory allows
+  per_device_train_batch_size: 8      # must be a multiple of num_generations
+  gradient_accumulation_steps: 4      # effective 32 episodes per optimizer step
+  max_steps: 300                      # 200-500 per the plan; keep runs tiny until reward moves
+  learning_rate: 1.0e-5               # LoRA; 1e-6 for a full fine-tune
+  beta: 0.0                           # KL to the reference policy. TRL default is 0 (no ref model, saves memory);
+                                      # DeepSeek-R1 used ~0.001-0.04. Add it only if the policy drifts/collapses.
+  epsilon: 0.2                        # PPO-style clip
+  loss_type: dapo                     # token-level normalisation; "grpo" is the original sequence-level loss
+  scale_rewards: group                # standardise advantages within the group (classic GRPO); "none" = Dr. GRPO
+  max_completion_length: 1024         # per model turn
+  temperature: 1.0                    # diversity within the group
+  mask_truncated_completions: true    # a turn cut at max tokens is not a valid action
+  use_vllm: true                      # rollouts through vLLM
+  vllm_mode: server                   # `trl vllm-serve --model ...` on the same GPU with sleep mode, or a second GPU
+  vllm_gpu_memory_utilization: 0.3
+  logging_steps: 1
+  save_steps: 50
+  report_to: wandb
+
+rollout:                              # our side, not TRL's
+  domain: retail
+  split: train
+  max_steps: 60                       # episode cap for RL (tau2 default 100)
+  user_sim_model: gpt-4.1-mini        # env: USER_SIM_MODEL / OPENAI_BASE_URL / OPENAI_API_KEY
+  shaping_weight: 0.1
