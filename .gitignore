@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Benchmark data fetched by scripts/fetch_tau2_data.py (pinned commit, not vendored)
+data/
+
+# Training / eval artifacts
+checkpoints/
+ckpt/
+outputs/
+runs/
+wandb/
+*.safetensors
+*.pt
+*.bin
+*.gguf
+*.jsonl
+!tests/fixtures/*.jsonl
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
