@@ -1,0 +1,52 @@
+# Evaluate a served model through the verifiers env (prime-rl `uv run eval @ configs/eval/prime_rl_eval.toml`).
+#
+#   uv run inference --vllm.model Qwen/Qwen3-8B      # terminal 1
+#   uv run eval @ configs/eval/prime_rl_eval.toml     # terminal 2; -m <checkpoint> to evaluate a trained model
+#
+# group_size = 4 gives four rollouts per task, which is what pass^4 needs; pass^k
+# itself is computed from traces.jsonl (tooluse_rl.env.metrics.pass_hat_k), the
+# eval summary reports mean reward. For the README table the official number
+# comes from `tau2 run` (with the NL-assertion judge); this config is the
+# in-loop, judge-free measurement.
+
+model = "Qwen/Qwen3-8B"
+group_size = 4
+
+[client]
+base_url = "http://localhost:8000/v1"
+
+[concurrency]
+min_inflight = 8
+max_inflight = 64
+
+[sampling]
+max_completion_tokens = 1024
+temperature = 0.0
+
+[[source]]
+name = "tau2-retail-test"
+env.taskset.id = "tooluse-rl"
+env.taskset.domain = "retail"
+env.taskset.split = "test"
+env.assistant.harness.id = "null"
+env.assistant.runtime.type = "subprocess"
+env.user.harness.id = "null"
+env.user.runtime.type = "subprocess"
+env.user.model = "gpt-4.1-mini"
+env.user.client.base_url = "https://api.openai.com/v1"
+env.user.client.api_key_var = "OPENAI_API_KEY"
+env.user.max_turns = 30
+
+[[source]]
+name = "tau2-airline-heldout"
+env.taskset.id = "tooluse-rl"
+env.taskset.domain = "airline"
+env.taskset.split = "base"
+env.assistant.harness.id = "null"
+env.assistant.runtime.type = "subprocess"
+env.user.harness.id = "null"
+env.user.runtime.type = "subprocess"
+env.user.model = "gpt-4.1-mini"
+env.user.client.base_url = "https://api.openai.com/v1"
+env.user.client.api_key_var = "OPENAI_API_KEY"
+env.user.max_turns = 30

@@ -1,0 +1,29 @@
+# SFT warm start (prime-rl `uv run sft @ configs/sft/prime_rl_sft.toml`).
+#
+# Purpose: teach the base model the *format* (tau2 tool calls, one action per
+# turn, ending the call) before RL, so GRPO spends its budget on task success
+# rather than on learning to emit valid tool calls. The plan calls this
+# optional; skip it if the base model already passes >10% of retail train.
+#
+# Data: rejection-sampled trajectories from a stronger model run through the
+# same env (tooluse-rl-eval --out ...), filtered to task_success == 1, converted
+# to a chat dataset with tool calls. Push it to the Hub and name it below.
+# Knobs that matter: lr (1e-5 is the safe default for a full fine-tune; use
+# 1e-4 with LoRA), max_steps (~1 epoch: ceil(num_trajectories / batch_size)),
+# seq_len (retail episodes with tool outputs run 4-8k tokens).
+
+max_steps = 100            # ~1 epoch over ~3k trajectories at batch 32 -- recompute for your set
+
+[ckpt]                     # checkpoint at the end of training
+
+[model]
+name = "Qwen/Qwen3-8B"     # the 8B-class base from the plan; PrimeIntellect/* clones ship RL-friendly chat templates
+
+[data]
+name = "<hf-user>/tau2-retail-rejection-sampled"   # TODO: dataset of successful trajectories
+seq_len = 8192             # must cover the longest episode you keep; truncation silently drops the ending
+batch_size = 32
+micro_batch_size = 1       # raise on 80GB cards once seq_len is known
+
+[optim]
+lr = 1e-5                  # full fine-tune; 1e-4 for LoRA (see [model.lora] in the RL config)

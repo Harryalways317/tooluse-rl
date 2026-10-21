@@ -1,0 +1,220 @@
+{
+  "name": "no_change_task_success",
+  "description": "Read-only conversation on a task whose correct outcome is to change nothing.",
+  "domain": "retail",
+  "task_id": "24",
+  "max_steps": 100,
+  "tags": [
+    "success",
+    "no-op"
+  ],
+  "script": {
+    "policy": [
+      {
+        "say": "Sure. Could you give me your full name and zip code?"
+      },
+      {
+        "call": "find_user_id_by_name_zip",
+        "args": {
+          "first_name": "Sofia",
+          "last_name": "Hernandez",
+          "zip": "98193"
+        }
+      },
+      {
+        "call": "get_user_details",
+        "args": {
+          "user_id": "sofia_hernandez_5364"
+        }
+      },
+      {
+        "call": "get_order_details",
+        "args": {
+          "order_id": "#W3561391"
+        }
+      },
+      {
+        "say": "I found pending order #W3561391 with a portable gas grill. To confirm: cancel it and refund to the original payment method? (yes/no)"
+      },
+      {
+        "say": "Understood, I'll leave order #W3561391 as it is."
+      }
+    ],
+    "user": [
+      "Hi, I want to cancel the grill I ordered.",
+      "Sofia Hernandez, zip 98193. I don't remember my email.",
+      "Hmm, actually no. On second thought I'd like to keep the grill, never mind.",
+      "Thanks, that's all."
+    ],
+    "policy_exhausted": "Is there anything else I can help you with?",
+    "user_exhausted": "###STOP###"
+  },
+  "expected": {
+    "task_success": 1.0,
+    "format_score": 1.0,
+    "total": 1.1,
+    "termination_reason": "user_stop",
+    "tool_errors": 0
+  },
+  "record": {
+    "schema": "tooluse-rl/trajectory/v1",
+    "id": "2b3048a17e0e4c52a22babfaf0954fa9",
+    "run_id": "fixture",
+    "created_at": "2026-10-21T17:02:19+00:00",
+    "benchmark": "tau2-bench",
+    "domain": "retail",
+    "task_id": "24",
+    "trial": 0,
+    "seed": null,
+    "policy_model": "mock-policy",
+    "user_model": "mock-user",
+    "system_prompt": "<instructions>\nYou are a customer service agent that helps the user according to the <policy> provided below.\nIn each turn you can either:\n- Send a message to the user.\n- Make a tool call.\nYou cannot do both at the same time.\n\nTry to be helpful and always follow the policy. Always make sure you generate valid JSON only.\n</instructions>\n<policy>\n# Retail agent policy\n\nAs a retail agent, you can help users:\n\n- **cancel or modify pending orders**\n- **return or exchange delivered orders**\n- **modify their default user address**\n- **provide information about their own profile, orders, and related products**\n\nAt the beginning of the conversation, you have to authenticate the user identity by locating their user id via email, or via name + zip code. This has to be done even when the user already provides the user id.\n\nOnce the user has been authenticated, you can provide the user with information about order, product, profile information, e.g. help the user look up order id.\n\nYou can only help one user per conversation (but you can handle multiple requests from the same user), and must deny any requests for tasks related to any other user.\n\nBefore taking any action that updates the database (cancel, modify, return, exchange), you must list the action details and obtain explicit user confirmation (yes) to proceed.\n\nYou should not make up any information or knowledge or procedures not provided by the user or the tools, or give subjective recommendations or comments.\n\nYou should at most make one tool call at a time, and if you take a tool call, you should not respond to the user at the same time. If you respond to the user, you should not make a tool call at the same time.\n\nYou should deny user requests that are against this policy.\n\nYou should transfer the user to a human agent if and only if the request cannot be handled within the scope of your actions. To transfer, first make a tool call to transfer_to_human_agents, and then send the message 'YOU ARE BEING TRANSFERRED TO A HUMAN AGENT. PLEASE HOLD ON.' to the user.\n\n## Domain basic\n\n- All times in the database are EST and 24 hour based. For example \"02:30:00\" means 2:30 AM EST.\n\n### User\n\nEach user has a profile containing:\n\n- unique user id\n- email\n- default address\n- payment methods.\n\nThere are three types of payment methods: **gift card**, **paypal account**, **credit card**.\n\n### Product\n\nOur retail store has 50 types of products.\n\nFor each **type of product**, there are **variant items** of different **options**.\n\nFor example, for a 't-shirt' product, there could be a variant item with option 'color blue size M', and another variant item with option 'color red size L'.\n\nEach product has the following attributes:\n\n- unique product id\n- name\n- list of variants\n\nEach variant item has the following attributes:\n\n- unique item id\n- information about the value of the product options for this item.\n- availability\n- price\n\nNote: Product ID and Item ID have no relations and should not be confused!\n\n### Order\n\nEach order has the following attributes:\n\n- unique order id\n- user id\n- address\n- items ordered\n- status\n- fullfilments info (tracking id and item ids)\n- payment history\n\nThe status of an order can be: **pending**, **processed**, **delivered**, or **cancelled**.\n\nOrders can have other optional attributes based on the actions that have been taken (cancellation reason, which items have been exchanged, what was the exchane price difference etc)\n\n## Generic action rules\n\nGenerally, you can only take action on pending or delivered orders.\n\nExchange or modify order tools can only be called once per order. Be sure that all items to be changed are collected into a list before making the tool call!!!\n\n## Cancel pending order\n\nAn order can only be cancelled if its status is 'pending', and you should check its status before taking the action.\n\nThe user needs to confirm the order id and the reason (either 'no longer needed' or 'ordered by mistake') for cancellation. Other reasons are not acceptable.\n\nAfter user confirmation, the order status will be changed to 'cancelled', and the total will be refunded via the original payment method immediately if it is gift card, otherwise in 5 to 7 business days.\n\n## Modify pending order\n\nAn order can only be modified if its status is 'pending', and you should check its status before taking the action.\n\nFor a pending order, you can take actions to modify its shipping address, payment method, or product item options, but nothing else.\n\n### Modify payment\n\nThe user can only choose a single payment method different from the original payment method.\n\nIf the user wants the modify the payment method to gift card, it must have enough balance to cover the total amount.\n\nAfter user confirmation, the order status will be kept as 'pending'. The original payment method will be refunded immediately if it is a gift card, otherwise it will be refunded within 5 to 7 business days.\n\n### Modify items\n\nThis action can only be called once, and will change the order status to 'pending (items modifed)'. The agent will not be able to modify or cancel the order anymore. So you must confirm all the details are correct and be cautious before taking this action. In particular, remember to remind the customer to confirm they have provided all the items they want to modify.\n\nFor a pending order, each item can be modified to an available new item of the same product but of different product option. There cannot be any change of product types, e.g. modify shirt to shoe.\n\nThe user must provide a payment method to pay or receive refund of the price difference. If the user provides a gift card, it must have enough balance to cover the price difference.\n\n## Return delivered order\n\nAn order can only be returned if its status is 'delivered', and you should check its status before taking the action.\n\nThe user needs to confirm the order id and the list of items to be returned.\n\nThe user needs to provide a payment method to receive the refund.\n\nThe refund must either go to the original payment method, or an existing gift card.\n\nAfter user confirmation, the order status will be changed to 'return requested', and the user will receive an email regarding how to return items.\n\n## Exchange delivered order\n\nAn order can only be exchanged if its status is 'delivered', and you should check its status before taking the action. In particular, remember to remind the customer to confirm they have provided all items to be exchanged.\n\nFor a delivered order, each item can be exchanged to an available new item of the same product but of different product option. There cannot be any change of product types, e.g. modify shirt to shoe.\n\nThe user must provide a payment method to pay or receive refund of the price difference. If the user provides a gift card, it must have enough balance to cover the price difference.\n\nAfter user confirmation, the order status will be changed to 'exchange requested', and the user will receive an email regarding how to return items. There is no need to place a new order.\n\n</policy>",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "Hi! How can I help you today?",
+        "turn_idx": 0
+      },
+      {
+        "role": "user",
+        "content": "Hi, I want to cancel the grill I ordered.",
+        "turn_idx": 1
+      },
+      {
+        "role": "assistant",
+        "content": "Sure. Could you give me your full name and zip code?",
+        "turn_idx": 2
+      },
+      {
+        "role": "user",
+        "content": "Sofia Hernandez, zip 98193. I don't remember my email.",
+        "turn_idx": 3
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_idx": 4,
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "name": "find_user_id_by_name_zip",
+            "arguments": {
+              "first_name": "Sofia",
+              "last_name": "Hernandez",
+              "zip": "98193"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": "sofia_hernandez_5364",
+        "error": false,
+        "turn_idx": 5
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_idx": 6,
+        "tool_calls": [
+          {
+            "id": "call_2",
+            "name": "get_user_details",
+            "arguments": {
+              "user_id": "sofia_hernandez_5364"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_2",
+        "content": "{\"user_id\": \"sofia_hernandez_5364\", \"name\": {\"first_name\": \"Sofia\", \"last_name\": \"Hernandez\"}, \"address\": {\"address1\": \"652 Laurel Lane\", \"address2\": \"Suite 398\", \"city\": \"Seattle\", \"country\": \"USA\", \"state\": \"WA\", \"zip\": \"98193\"}, \"email\": \"sofia.hernandez3039@example.com\", \"payment_methods\": {\"credit_card_7901829\": {\"source\": \"credit_card\", \"id\": \"credit_card_7901829\", \"brand\": \"visa\", \"last_four\": \"7312\"}}, \"orders\": [\"#W3561391\", \"#W6876713\", \"#W9609649\", \"#W3947049\"]}",
+        "error": false,
+        "turn_idx": 7
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_idx": 8,
+        "tool_calls": [
+          {
+            "id": "call_3",
+            "name": "get_order_details",
+            "arguments": {
+              "order_id": "#W3561391"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_3",
+        "content": "{\"order_id\": \"#W3561391\", \"user_id\": \"sofia_hernandez_5364\", \"address\": {\"address1\": \"652 Laurel Lane\", \"address2\": \"Suite 398\", \"city\": \"Seattle\", \"country\": \"USA\", \"state\": \"WA\", \"zip\": \"98193\"}, \"items\": [{\"name\": \"Grill\", \"product_id\": \"6819683148\", \"item_id\": \"5946177616\", \"price\": 1057.24, \"options\": {\"type\": \"gas\", \"size\": \"portable\", \"features\": \"none\"}}], \"status\": \"pending\", \"fulfillments\": [], \"payment_history\": [{\"transaction_type\": \"payment\", \"amount\": 1057.24, \"payment_method_id\": \"credit_card_7901829\"}], \"cancel_reason\": null, \"exchange_items\": null, \"exchange_new_items\": null, \"exchange_payment_method_id\": null, \"exchange_price_difference\": null, \"return_items\": null, \"return_payment_method_id\": null}",
+        "error": false,
+        "turn_idx": 9
+      },
+      {
+        "role": "assistant",
+        "content": "I found pending order #W3561391 with a portable gas grill. To confirm: cancel it and refund to the original payment method? (yes/no)",
+        "turn_idx": 10
+      },
+      {
+        "role": "user",
+        "content": "Hmm, actually no. On second thought I'd like to keep the grill, never mind.",
+        "turn_idx": 11
+      },
+      {
+        "role": "assistant",
+        "content": "Understood, I'll leave order #W3561391 as it is.",
+        "turn_idx": 12
+      },
+      {
+        "role": "user",
+        "content": "Thanks, that's all.",
+        "turn_idx": 13
+      },
+      {
+        "role": "assistant",
+        "content": "Is there anything else I can help you with?",
+        "turn_idx": 14
+      },
+      {
+        "role": "user",
+        "content": "###STOP###",
+        "turn_idx": 15
+      }
+    ],
+    "termination_reason": "user_stop",
+    "steps": 15,
+    "tool_errors": 0,
+    "final_db_hash": "b25c9cb211f5efcaee5dd646054a73c4a9f43f4f5acc32c10713cd9f9ac20e9c",
+    "reward": {
+      "total": 1.1,
+      "task_success": 1.0,
+      "format_score": 1.0,
+      "shaping_weight": 0.1,
+      "db_match": true,
+      "termination_reason": "user_stop",
+      "evaluation_type": "env",
+      "reward_basis": [
+        "DB",
+        "NL_ASSERTION"
+      ],
+      "signals": {
+        "clean_termination": true,
+        "no_tool_errors": true,
+        "no_mixed_turns": true,
+        "within_step_budget": true
+      },
+      "tau2_info": null
+    },
+    "usage": {
+      "policy": {},
+      "user": {}
+    },
+    "cost_usd": null,
+    "duration_s": 0.001
+  }
+}

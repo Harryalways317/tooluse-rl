@@ -1,0 +1,56 @@
+[project]
+name = "tooluse-rl"
+version = "0.1.0"
+description = "RL post-training (GRPO) of a small open model on tau2-bench retail, with the airline domain held out."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Harish Vadaparty", email = "harishvadaparty@gmail.com" }]
+requires-python = ">=3.12,<3.14"
+keywords = ["reinforcement-learning", "grpo", "tool-use", "tau2-bench", "verifiers", "prime-rl"]
+dependencies = [
+    # tau2-bench is not on PyPI (the PyPI `tau2` is an unrelated chemistry package);
+    # it is pinned to a commit under [tool.uv.sources] below.
+    "tau2",
+    # verifiers 0.4.0 is the first release with the `verifiers.v1` API that prime-rl >=0.10 uses.
+    "verifiers>=0.4.0",
+    # openai is already pulled in by verifiers; listed because we import it directly.
+    "openai>=1.0",
+]
+
+[project.scripts]
+tooluse-rl-eval = "tooluse_rl.eval.baseline:main"
+tooluse-rl-fetch-data = "tooluse_rl.data:main"
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+# Pinned so the benchmark tasks, DB and evaluator cannot drift under a result.
+# scripts/fetch_tau2_data.py fetches the data directory from the same commit.
+tau2 = { git = "https://github.com/sierra-research/tau2-bench.git", rev = "7233d6a7a7c9b0e0ba551da2105d0b60661aefe5" }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -ra"
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+]

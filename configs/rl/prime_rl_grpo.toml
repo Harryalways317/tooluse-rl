@@ -1,0 +1,126 @@
+# GRPO on tau2 retail (prime-rl `uv run rl @ configs/rl/prime_rl_grpo.toml`).
+#
+# The environment is this package: taskset id `tooluse-rl` resolves to the
+# `tooluse_rl` module, whose exported Tau2Taskset + Tau2UserSimEnv run the
+# assistant (the policy) against a simulated user (a frozen API model) with the
+# retail tools served over MCP. Reward = task_success (tau2 DB check) + 0.1 x
+# format shaping (see tooluse_rl.env.reward).
+#
+# Knobs that matter (from DeepSeek-R1 / Tulu 3 / prime-rl's examples):
+#   group_size        8-16. GRPO's advantage is group-relative; <8 is noisy on a
+#                     binary reward, >16 mostly costs rollouts. Tasks where all
+#                     16 rollouts agree carry zero gradient (prime-rl drops them).
+#   batch_size        rollouts per step = tasks_per_step x group_size. 32 tasks x 16.
+#   max_steps         200-500 is the plan's budget; keep runs tiny until reward moves.
+#   lr                1e-6 (full) is the usual GRPO range; 1e-5 with LoRA.
+#   KL                prime-rl's `grpo` has no reference-KL term; drift is bounded
+#                     by the clipped ratio and `max_off_policy_steps`. If the
+#                     policy collapses, lower lr / max_off_policy_steps before
+#                     reaching for a KL term (TRL's `beta` in the fallback config).
+#   max_completion_tokens  per model turn; a tau2 turn is a short message or a
+#                     tool call, 512 is plenty, 1024 leaves room for thinking.
+#   user.max_turns    caps the conversation (30 ~ tau2's 100-step default).
+# Expect reward hacking: early "###STOP###"-baiting, asking the user to confirm
+# nothing, hallucinated writes. Watch tool_errors / num_messages metrics.
+
+max_steps = 300
+seq_len = 16384            # whole multi-turn episode incl. tool outputs; retail runs 4-8k, keep headroom
+
+[deployment]
+num_train_gpus = 1
+num_infer_gpus = 1         # 2x H100 total: one trainer, one vLLM; see docs/training.md for other splits
+
+[monitors.wandb]
+project = "tooluse-rl"
+name = "grpo-retail-qwen3-8b"
+
+[ckpt]
+interval = 50
+keep_last = 2
+
+[model]
+name = "Qwen/Qwen3-8B"     # or the SFT checkpoint exported from configs/sft
+
+[trainer.model.lora]       # LoRA keeps a single 80GB trainer GPU viable at 8B; drop this section for a full fine-tune
+rank = 32
+alpha = 64
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+[trainer.optim]
+lr = 1e-5                  # LoRA; use 1e-6 for a full fine-tune
+
+[orchestrator]
+batch_size = 512           # 32 tasks x group_size 16 per step
+max_off_policy_steps = 4   # async staleness bound; lower if mismatch_kl climbs
+
+[orchestrator.train]
+group_size = 16
+
+[orchestrator.train.algo]
+type = "grpo"
+
+[orchestrator.renderer]
+name = "prime-qwen3"       # token/logprob rendering for the Qwen3 chat template
+
+[orchestrator.train.sampling]
+max_completion_tokens = 1024
+temperature = 1.0          # GRPO needs diversity inside a group; do not lower below ~0.7
+
+[[orchestrator.train.source]]
+name = "tau2-retail-train"
+env.taskset.id = "tooluse-rl"
+env.taskset.domain = "retail"
+env.taskset.split = "train"             # 74 tasks; the test split (40) and airline are never trained on
+env.assistant.harness.id = "null"        # plain chat-completions + MCP tools; the trainable policy
+env.assistant.runtime.type = "subprocess"
+env.user.harness.id = "null"             # the simulated user: a frozen, cheap API model
+env.user.runtime.type = "subprocess"
+env.user.model = "gpt-4.1-mini"          # TODO: pick the user-sim model; its cost is the $50-200 line in the budget
+env.user.client.base_url = "https://api.openai.com/v1"
+env.user.client.api_key_var = "OPENAI_API_KEY"
+env.user.max_turns = 30
+
+# Online eval every N steps on the held-out splits (never the train split).
+[orchestrator.eval]
+interval = 25
+
+[orchestrator.eval.select]
+limit = 40
+
+[orchestrator.eval.sampling]
+max_completion_tokens = 1024
+temperature = 0.0
+
+[[orchestrator.eval.source]]
+name = "tau2-retail-test"
+env.taskset.id = "tooluse-rl"
+env.taskset.domain = "retail"
+env.taskset.split = "test"
+env.assistant.harness.id = "null"
+env.assistant.runtime.type = "subprocess"
+env.user.harness.id = "null"
+env.user.runtime.type = "subprocess"
+env.user.model = "gpt-4.1-mini"
+env.user.client.base_url = "https://api.openai.com/v1"
+env.user.client.api_key_var = "OPENAI_API_KEY"
+env.user.max_turns = 30
+
+[[orchestrator.eval.source]]
+name = "tau2-airline-heldout"
+env.taskset.id = "tooluse-rl"
+env.taskset.domain = "airline"
+env.taskset.split = "base"               # all 50 airline tasks; none are trained on
+env.assistant.harness.id = "null"
+env.assistant.runtime.type = "subprocess"
+env.user.harness.id = "null"
+env.user.runtime.type = "subprocess"
+env.user.model = "gpt-4.1-mini"
+env.user.client.base_url = "https://api.openai.com/v1"
+env.user.client.api_key_var = "OPENAI_API_KEY"
+env.user.max_turns = 30
+
+[inference]
+
+[inference.vllm]
+max_model_len = 16384
+gpu_memory_utilization = 0.85
